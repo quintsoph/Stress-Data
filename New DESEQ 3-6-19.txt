@@ -1,0 +1,331 @@
+#nohup R CMD BATCH ./myprog.R &
+library("RColorBrewer")
+ library("DESeq2")
+ library("geneplotter")
+ library("EDASeq")
+ library("genefilter")
+ library ("locfit")
+source("https://bioconductor.org/biocLite.R")
+BiocManager::install("DESeq2")
+BiocManager::install("EDASeq")
+ library("DESeq2")
+ library("EDASeq")
+#Load gene file
+	setwd("/DataDrives/dd12/stress/L1HSoutput")
+	batchnormal<- read.table("stressgenematrix.txt", sep="\t", fill=TRUE, header=TRUE, row.names=1)
+	batchnormal2<- as.matrix(batchnormal)
+	
+#setup covairate tissue type							  
+	setwd("/DataDrives/dd12/stress/L1HSoutput")
+	attrib<-read.table("attributematrix.txt", fill=TRUE, sep="\t", row.names=1, header=TRUE)
+	attribs<- as.matrix(attrib)
+#treatment separate
+#####
+###
+##
+#h202
+h202sub<- subset(attribs, attribs[,1] == "H2O2", select=c(1,2,3))
+h2o2cut<- batchnormal2[,match(rownames(h202sub), colnames(batchnormal2))]
+
+#create the R class
+
+dds <- DESeqDataSetFromMatrix(countData = h2o2cut,
+							colData = as.data.frame(h202sub),
+                              design = ~ time)
+setwd("/DataDrives/dd12/stress/L1HSoutput/timeresults")
+# step 1
+  FDR <- 0.1
+  floorPDEG <- 0.05
+  filter <- apply(counts(dds), 1, function(x) { all(x > 0)})
+  dds <- dds[filter,]
+  #size factors
+ddsnormal <- estimateSizeFactors(dds)
+    sizeFactors(ddsnormal) <- sizeFactors(ddsnormal) / mean(sizeFactors(ddsnormal))
+    sf <- sizeFactors(ddsnormal) 
+	setwd("/DataDrives/dd12/stress/L1HSoutput/timeresults")
+    write.table(sf, file="sizefactors.H2o2treatment.1.txt", quote=FALSE, row.names=TRUE, sep="\t")
+	sf <- read.table("sizefactors.H2o2treatment.1.txt", row.names=1, sep="\t", header=TRUE)
+	  sf <- c(t(sf))
+	  sizeFactors(ddsnormal) <- sf
+	  colnormal = colData(ddsnormal)
+	
+#skip step 2 and 3 since it is the same tissue type
+###Input TEtranscripts
+	setwd("/DataDrives/dd12/stress/L1HSoutput")
+totaltissue<- read.table("stressL1HSresults.txt", header=TRUE, row.names=1, sep="\t")
+ttissue<- t(totaltissue[,c(1:18)])
+setwd("/DataDrives/dd12/stress/L1HSoutput/timeresults")
+library("stringr")
+t_TEcntmatrix = ttissue
+ t_cntmatrix = t(h2o2cut)
+m <- merge(t_cntmatrix, t_TEcntmatrix, by.x="row.names", by.y="row.names")
+new_patients = m[,1]
+new_genenames = colnames(m[,-1])
+new_cntmatrix = as.matrix(t(m[,-1]))
+colnames(new_cntmatrix) = new_patients
+  write.table(new_cntmatrix, file="cntmatrix.H2o2treatment.geneTE.txt", quote=FALSE, row.names=TRUE, sep="\t") 
+  
+  test<- subset(new_cntmatrix)
+  stopifnot( as.character(colnormal$patient) == new_patients ) # need patient ids in same order to use previously estimated sizeFactors
+  colnames(new_cntmatrix) = NULL
+  
+  
+  ddsnew <- DESeqDataSetFromMatrix(
+    countData = new_cntmatrix,
+    colData = colnormal,
+    design = ~ time)
+  ddsnew$type <- droplevels(ddsnew$type)
+  # set sizefactors 
+  sizeFactors(ddsnew) <- sf
+  save(ddsnew, file="ddsNew.H2o2treatment.DEGES.RData")
+  ddsnewcnts <- counts (ddsnew, normalized=TRUE) 
+  write.table(ddsnewcnts, file="normalizedcnt.H2o2treatment.txt", quote=FALSE, row.names=TRUE, sep="\t")
+ 
+ 
+  L1HSnormalized <- ddsnewcnts["L1HS:L1:LINE",]
+  write.table(L1HSnormalized, file="L1HS.H2o2treatment.normalized.txt", quote=FALSE, row.names=TRUE, sep="\t")
+  log2colsums <- log2(colSums(ddsnewcnts))
+  write.table(log2colsums, file="log2colsums.H2o2treatment.txt", quote=FALSE, row.names=TRUE, sep="\t")
+  
+#log transformation (vst)
+
+  vsd <- vst(ddsnew, blind = FALSE)
+  VSTcnts <- assay(vsd)
+  write.table(VSTcnts["L1HS:L1:LINE",], "L1HS.VST.H2o2treatment.cnts.txt", quote=FALSE, row.names = TRUE)
+  save(VSTcnts, file = "VSTcnts.H2o2treatment.DEGES.RData")
+  write.table(VSTcnts, file="VSTcnt.H2o2treatment.txt", quote=FALSE, row.names=TRUE, sep="\t")
+ 
+  L1HSnormalized = read.table("L1HS.H2o2treatment.normalized.txt", row.names=1, sep="\t", check.names = FALSE)
+  L1HStable <- cbind.data.frame(colData(ddsnew), L1HSnormalized )
+  L1HStable <- cbind.data.frame(L1HStable, VSTcnts["L1HS:L1:LINE",] )
+  colnames(L1HStable)[5:6] = c("normalizedcnt", "VSTcnt")
+  write.table(L1HStable, file="L1HS.VST.H2o2treatment.txt", quote=FALSE, row.names=TRUE, sep="\t")
+ #subset ddsnew by time
+ #separate by time
+	#0
+	time0h2o2<- subset(h202sub, h202sub[,3] == "0hr", select=c(1,2,3))
+	#1
+	time1h2o2<- subset(h202sub, h202sub[,3] == "1hr", select=c(1,2,3))
+	#4
+	time4h2o2<- subset(h202sub, h202sub[,3] == "4hr", select=c(1,2,3))
+	#8
+	time8h2o2<- subset(h202sub, h202sub[,3] == "8hr", select=c(1,2,3))
+	#0 and 1
+	newattribfile<- data.frame(rbind(time0h2o2, time1h2o2))
+	ddsnew.subset <- subset(ddsnew, select = colData(ddsnew)$time %in% newattribfile$time)
+	#use deseq function then results function 
+	colnames(new_cntmatrix)= new_patients
+	pats01<- new_cntmatrix[,colnames(new_cntmatrix)%in%rownames(newattribfile)] 
+	ddsnew01 <- DESeqDataSetFromMatrix(
+    countData = pats01, 
+    colData = colData(ddsnew.subset),
+    design = ~ time)
+		# standard analysis
+		ddsnew01 <- DESeq(ddsnew01)
+		res01 <- results(ddsnew01)
+	write.table(res01, "resultsforh2o2.01.comparison.txt", sep="\t", quote=FALSE)
+	#0 and 4
+	newattribfile<- data.frame(rbind(time0h2o2, time4h2o2))
+	ddsnew.subset <- subset(ddsnew, select = colData(ddsnew)$time %in% newattribfile$time)
+	#use deseq function then results function 
+	colnames(new_cntmatrix)= new_patients
+	pats04<- new_cntmatrix[,colnames(new_cntmatrix)%in%rownames(newattribfile)] 
+	ddsnew04 <- DESeqDataSetFromMatrix(
+    countData = pats04, 
+    colData = colData(ddsnew.subset),
+    design = ~ time)
+		# standard analysis
+		ddsnew04 <- DESeq(ddsnew04)
+		res04 <- results(ddsnew04)
+	write.table(res04, "resultsforh2o2.04.comparison.txt", sep="\t", quote=FALSE)
+	#0 and 8
+	newattribfile<- data.frame(rbind(time0h2o2, time8h2o2))
+	ddsnew.subset <- subset(ddsnew, select = colData(ddsnew)$time %in% newattribfile$time)
+	#use deseq function then results function 
+	colnames(new_cntmatrix)= new_patients
+	pats08<- new_cntmatrix[,colnames(new_cntmatrix)%in%rownames(newattribfile)] 
+	ddsnew08 <- DESeqDataSetFromMatrix(
+    countData = pats08, 
+    colData = colData(ddsnew.subset),
+    design = ~ time)
+		# standard analysis
+		ddsnew08 <- DESeq(ddsnew08)
+		res08 <- results(ddsnew08)
+	write.table(res08, "resultsforh2o2.08.comparison.txt", sep="\t", quote=FALSE)
+	
+#TM
+tmsub<- subset(attribs, attribs[,1] == "Tm", select=c(1,2,3))
+tmcut<- batchnormal2[,match(rownames(tmsub), colnames(batchnormal2))]
+
+#create the R class
+
+dds <- DESeqDataSetFromMatrix(countData = tmcut,
+							colData = as.data.frame(tmsub),
+                              design = ~ time)
+setwd("/DataDrives/dd12/stress/L1HSoutput/timeresults")
+# step 1
+  FDR <- 0.1
+  floorPDEG <- 0.05
+  filter <- apply(counts(dds), 1, function(x) { all(x > 0)})
+  dds <- dds[filter,]
+  #size factors
+ddsnormal <- estimateSizeFactors(dds)
+    sizeFactors(ddsnormal) <- sizeFactors(ddsnormal) / mean(sizeFactors(ddsnormal))
+    sf <- sizeFactors(ddsnormal) 
+	setwd("/DataDrives/dd12/stress/L1HSoutput/timeresults")
+    write.table(sf, file="sizefactors.tmtreatment.1.txt", quote=FALSE, row.names=TRUE, sep="\t")
+	sf <- read.table("sizefactors.tmtreatment.1.txt", row.names=1, sep="\t", header=TRUE)
+	  sf <- c(t(sf))
+	  sizeFactors(ddsnormal) <- sf
+	  colnormal = colData(ddsnormal)
+	
+#skip step 2 and 3 since it is the same tissue type
+###Input TEtranscripts
+	setwd("/DataDrives/dd12/stress/L1HSoutput")
+totaltissue<- read.table("stressL1HSresults.txt", header=TRUE, row.names=1, sep="\t")
+ttissue<- t(totaltissue[,c(19:36)])
+setwd("/DataDrives/dd12/stress/L1HSoutput/timeresults")
+library("stringr")
+t_TEcntmatrix = ttissue
+ t_cntmatrix = t(tmcut)
+m <- merge(t_cntmatrix, t_TEcntmatrix, by.x="row.names", by.y="row.names")
+new_patients = m[,1]
+new_genenames = colnames(m[,-1])
+new_cntmatrix = as.matrix(t(m[,-1]))
+colnames(new_cntmatrix) = new_patients
+  write.table(new_cntmatrix, file="cntmatrix.tmtreatment.geneTE.txt", quote=FALSE, row.names=TRUE, sep="\t") 
+  
+  test<- subset(new_cntmatrix)
+  stopifnot( as.character(colnormal$patient) == new_patients ) # need patient ids in same order to use previously estimated sizeFactors
+  colnames(new_cntmatrix) = NULL
+  
+  
+  ddsnew <- DESeqDataSetFromMatrix(
+    countData = new_cntmatrix,
+    colData = colnormal,
+    design = ~ time)
+  ddsnew$type <- droplevels(ddsnew$type)
+  # set sizefactors 
+  sizeFactors(ddsnew) <- sf
+  save(ddsnew, file="ddsNew.tmtreatment.DEGES.RData")
+  ddsnewcnts <- counts (ddsnew, normalized=TRUE) 
+  write.table(ddsnewcnts, file="normalizedcnt.tmtreatment.txt", quote=FALSE, row.names=TRUE, sep="\t")
+ 
+ 
+  L1HSnormalized <- ddsnewcnts["L1HS:L1:LINE",]
+  write.table(L1HSnormalized, file="L1HS.tmtreatment.normalized.txt", quote=FALSE, row.names=TRUE, sep="\t")
+  log2colsums <- log2(colSums(ddsnewcnts))
+  write.table(log2colsums, file="log2colsums.tmtreatment.txt", quote=FALSE, row.names=TRUE, sep="\t")
+  
+#log transformation (vst)
+
+  vsd <- vst(ddsnew, blind = FALSE)
+  VSTcnts <- assay(vsd)
+  write.table(VSTcnts["L1HS:L1:LINE",], "L1HS.VST.tmtreatment.cnts.txt", quote=FALSE, row.names = TRUE)
+  save(VSTcnts, file = "VSTcnts.tmtreatment.DEGES.RData")
+  write.table(VSTcnts, file="VSTcnt.tmtreatment.txt", quote=FALSE, row.names=TRUE, sep="\t")
+ 
+  L1HSnormalized = read.table("L1HS.tmtreatment.normalized.txt", row.names=1, sep="\t", check.names = FALSE)
+  L1HStable <- cbind.data.frame(colData(ddsnew), L1HSnormalized )
+  L1HStable <- cbind.data.frame(L1HStable, VSTcnts["L1HS:L1:LINE",] )
+  colnames(L1HStable)[5:6] = c("normalizedcnt", "VSTcnt")
+  write.table(L1HStable, file="L1HS.VST.tmtreatment.txt", quote=FALSE, row.names=TRUE, sep="\t")
+ #subset ddsnew by time
+ #separate by time
+	#0
+	time0tm<- subset(tmsub, tmsub[,3] == "0hr", select=c(1,2,3))
+	time0tmcut<- tmcut[,match(rownames(time0tm), colnames(tmcut))]
+	#1
+	time1tm<- subset(tmsub, tmsub[,3] == "1hr", select=c(1,2,3))
+	time1tmcut<- tmcut[,match(rownames(time1tm), colnames(tmcut))]
+	#4
+	time4tm<- subset(tmsub, tmsub[,3] == "4hr", select=c(1,2,3))
+	time4tmcut<- tmcut[,match(rownames(time4tm), colnames(tmcut))]
+	#8
+	time8tm<- subset(tmsub, tmsub[,3] == "8hr", select=c(1,2,3))
+	time8tmcut<- tmcut[,match(rownames(time8tm), colnames(tmcut))]
+	#0 and 1
+	newattribfile<- data.frame(rbind(time0tm, time1tm))
+	ddsnew.subset <- subset(ddsnew, select = colData(ddsnew)$time %in% newattribfile$time)
+	#use deseq function then results function 
+	colnames(new_cntmatrix)= new_patients
+	pats01<- new_cntmatrix[,colnames(new_cntmatrix)%in%rownames(newattribfile)] 
+	ddsnew01 <- DESeqDataSetFromMatrix(
+    countData = pats01, 
+    colData = colData(ddsnew.subset),
+    design = ~ time)
+		# standard analysis
+		ddsnew01 <- DESeq(ddsnew01)
+		res01 <- results(ddsnew01)
+	write.table(res01, "resultsfortm.01.comparison.txt", sep="\t", quote=FALSE)
+	#0 and 4
+	newattribfile<- data.frame(rbind(time0tm, time4tm))
+	ddsnew.subset <- subset(ddsnew, select = colData(ddsnew)$time %in% newattribfile$time)
+	#use deseq function then results function 
+	colnames(new_cntmatrix)= new_patients
+	pats04<- new_cntmatrix[,colnames(new_cntmatrix)%in%rownames(newattribfile)] 
+	ddsnew04 <- DESeqDataSetFromMatrix(
+    countData = pats04, 
+    colData = colData(ddsnew.subset),
+    design = ~ time)
+		# standard analysis
+		ddsnew04 <- DESeq(ddsnew04)
+		res04 <- results(ddsnew04)
+	write.table(res04, "resultsfortm.04.comparison.txt", sep="\t", quote=FALSE)
+	#0 and 8
+	newattribfile<- data.frame(rbind(time0tm, time8tm))
+	ddsnew.subset <- subset(ddsnew, select = colData(ddsnew)$time %in% newattribfile$time)
+	#use deseq function then results function 
+	colnames(new_cntmatrix)= new_patients
+	pats08<- new_cntmatrix[,colnames(new_cntmatrix)%in%rownames(newattribfile)] 
+	ddsnew08 <- DESeqDataSetFromMatrix(
+    countData = pats08, 
+    colData = colData(ddsnew.subset),
+    design = ~ time)
+		# standard analysis
+		ddsnew08 <- DESeq(ddsnew08)
+		res08 <- results(ddsnew08)
+	write.table(res08, "resultsfortm.08.comparison.txt", sep="\t", quote=FALSE)
+	
+######create heatmap
+tm01<- read.table("resultsfortm.01.comparison.txt", header=TRUE, row.names=1)
+tm04<- read.table("resultsfortm.04.comparison.txt", header=TRUE, row.names=1)
+tm08<- read.table("resultsfortm.08.comparison.txt", header=TRUE, row.names=1)
+h20201<- read.table("resultsforh2o2.01.comparison.txt", header=TRUE, row.names=1)
+h20204<- read.table("resultsforh2o2.04.comparison.txt", header=TRUE, row.names=1)
+h20208<- read.table("resultsforh2o2.08.comparison.txt", header=TRUE, row.names=1)
+BiocManager::install("pheatmap")
+library("pheatmap")
+allfoldchanges<- cbind(tm01[,2], tm04[,2], tm08[,2], h20201[,2], h20204[,2], h20208[,2])
+colnames(allfoldchanges)= c("tm 0hr vs 1hr", "tm 0hr vs 4hr", "tm 0hr vs 8hr", "H2O2 0hr vs 1hr", "H2O2 0hr vs 4hr", "H2O2 0hr vs 8hr")
+rownames(allfoldchanges)= rownames(tm01)
+treatment<- c("Tunicamycin", "Tunicamycin", "Tunicamycin", "H2O2", "H2O2", "H2O2")
+transposonsfolds<- as.matrix(allfoldchanges[grepl(":", rownames(allfoldchanges)),])
+
+counts_filtered_df <- na.omit(transposonsfolds)
+test2<-  pheatmap(counts_filtered_df, cluster_rows=TRUE, cluster_cols=TRUE)
+namestransposons<-  rownames(counts_filtered_df[,test2$tree_col[["order"]]])
+write.table(namestransposons, "transposonorder.txt", sep="\t", quote=FALSE)
+test1<-  pheatmap(counts_filtered_df, cluster_rows=TRUE, cluster_cols=TRUE, show_rownames=FALSE)
+save_pheatmap_png <- function(x, filename, width=1200, height=1000, res = 150) {
+  png(filename, width = width, height = height, res = res)
+  grid::grid.newpage()
+  grid::grid.draw(x$gtable)
+  dev.off()
+  }
+save_pheatmap_png(test1, "test1.png")
+
+setgenelist <- data.frame(c("ATF5", "ATF4", "ATF3", "GADD34", "DDIT3", "IBTK", "IFRD1", "ARPC1A", "GNG5", "HAX1", "TADA3", "ZDHHC16"))
+genegroup <- allfoldchanges[rownames(allfoldchanges) %in% setgenelist[,1],] 
+test2<-pheatmap(genegroup, cluster_rows=TRUE, cluster_cols=TRUE)
+namestransposons<-  rownames(genegroup[,test2$tree_col[["order"]]])
+test1<-  pheatmap(genegroup, cluster_rows=TRUE, cluster_cols=TRUE, show_rownames=FALSE)
+save_pheatmap_png <- function(x, filename, width=1200, height=1000, res = 150) {
+  png(filename, width = width, height = height, res = res)
+  grid::grid.newpage()
+  grid::grid.draw(x$gtable)
+  dev.off()
+  }
+save_pheatmap_png(test1, "geneonlymap.png")
+write.table(namestransposons, "geneorder.txt", sep="\t", quote=FALSE)
+

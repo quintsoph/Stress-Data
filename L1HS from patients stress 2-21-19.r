@@ -14,15 +14,16 @@ setwd("/DataDrives/dd12/stress/TETranscripts")
 allpats=NULL
 for (i in patientlist[,1])
 {
-	final=NULL
+	expressionlevels=NULL
 	patfile=NULL
 	patfile= paste(i,"/",i,".discount.ele.cntTable", sep="")
 	pat<- read.table(patfile)
-	rownames(pat)=pat[,1]
-	L1HSpat<-pat[c("L1HS:L1:LINE"),]
-	final<-cbind(L1HSpat, paste(i))
-	colnames(final)=c("transposon", "expression", "patient")
-	allpats<- rbind(allpats, final)
+	transposons<- data.frame(pat[-1,])
+	expressionlevels<- data.frame(transposons[,2])
+	rownames(expressionlevels)=transposons[,1]
+	colnames(expressionlevels)=i
+	expressionlevels<- as.matrix(expressionlevels)
+	allpats<- cbind(allpats, expressionlevels)
 }
 
 setwd("/DataDrives/dd12/stress/L1HSoutput")
